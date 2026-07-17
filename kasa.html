@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pl">
 <head>
@@ -11,75 +10,200 @@
         .box { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); flex: 1; }
         #reader { width: 100%; max-width: 380px; background: #000; border-radius: 8px; overflow: hidden; margin-bottom: 15px; }
         h2 { color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px; margin-top: 0; }
-        input, button { padding: 12px; margin: 6px 0; width: 100%; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; }
-        button { background: #2ecc71; color: white; border: none; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        button:hover { background: #27ae60; }
+        button { padding: 12px; margin: 6px 0; width: 100%; box-sizing: border-box; border: none; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-pay { background: #3498db; color: white; }
+        .btn-pay:hover { background: #2980b9; }
+        .btn-add { background: #9b59b6; color: white; }
+        .btn-add:hover { background: #8e44ad; }
+        .btn-clear { background: #95a5a6; color: white; }
         .item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px dashed #e2e8f0; }
         #total { font-size: 26px; font-weight: bold; color: #e74c3c; text-align: right; margin: 20px 0; }
         .status-badge { padding: 8px; border-radius: 6px; text-align: center; font-weight: bold; margin-bottom: 15px; }
         .disconnected { background: #fde8e8; color: #e74c3c; }
         .connected { background: #def7ec; color: #03543f; }
         #pairing-section { text-align: center; padding: 15px; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 8px; }
+
+        /* MODAL - UKRYTY PANEL DO DODAWANIA PRODUKTÓW */
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); justify-content: center; align-items: center; }
+        .modal-content { background: #34495e; color: white; padding: 30px; border-radius: 12px; width: 100%; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); box-sizing: border-box; }
+        .modal-content h3 { margin-top: 0; color: #2ecc71; text-align: center; }
+        .modal-content label { font-size: 13px; color: #bdc3c7; display: block; margin-top: 10px; }
+        .modal-content input { width: 100%; padding: 10px; margin: 5px 0 15px 0; box-sizing: border-box; border: none; border-radius: 6px; font-size: 15px; }
+        .btn-save { background: #2ecc71; color: white; }
+        .btn-save:hover { background: #27ae60; }
+        .btn-close { background: #e74c3c; color: white; margin-top: 5px; }
+        .btn-close:hover { background: #c0392b; }
     </style>
 </head>
 <body>
+
     <div class="box">
-        <h2>Skaner QR (Kamera Laptopa)</h2>
+        <h2>Skaner Kodów na Żywo</h2>
         <div id="reader"></div>
-        <h3>Dodaj produkt do pamięci</h3>
-        <input type="text" id="p-name" placeholder="Nazwa produktu">
-        <input type="number" step="0.01" id="p-price" placeholder="Cena">
-        <button onclick="addTemplate()">Zapisz produkt</button>
+        <p style="color: #64748b; font-size: 13px;">Zbliż kod kreskowy lub QR do kamery.</p>
+        
+        <!-- PRZYCISK OTWIERAJĄCY PANEL NA TEJ SAMEJ STRONIE -->
+        <button class="btn-add" onclick="toggleModal(true)">➕ Otwórz panel dodawania produktów</button>
     </div>
+
     <div class="box">
         <h2>Połączenie z Terminalem</h2>
         <div id="conn-status" class="status-badge disconnected">Brak połączenia z terminalem</div>
+        
         <div id="pairing-section">
-            <p style="margin: 0 0 10px 0; color: #64748b;">Zeskanuj ten kod telefonem na starcie:</p>
+            <p style="margin: 0 0 10px 0; color: #64748b;">Zeskanuj ten kod telefonem, aby sparować:</p>
             <img id="pairing-qr" src="" alt="Kod parowania">
         </div>
+
         <h2>Aktualny Paragon</h2>
         <div id="cart-items"></div>
         <div id="total">Suma: 0.00 zł</div>
-        <button id="pay-btn" style="background: #3498db; font-size: 16px;" onclick="sendPaymentToTerminal()" disabled>Zapłać kartą</button>
-        <button style="background: #95a5a6; margin-top: 5px;" onclick="clearCart()">Wyczyść koszyk</button>
+        
+        <button id="pay-btn" class="btn-pay" onclick="sendPaymentToTerminal()" disabled>
+            Wyślij do Terminala (Czeka na połączenie...)
+        </button>
+        <button class="btn-clear" onclick="clearCart()">Wyczyść koszyk</button>
     </div>
+
+    <!-- PANEL MODALNY (DOMYŚLNIE UKRYTY) -->
+    <div id="product-modal" class="modal">
+        <div class="modal-content">
+            <h3>ZAPISZ PRODUKT W BAZIE</h3>
+            
+            <label>Kod kreskowy / numer (np. 5901234567890):</label>
+            <input type="text" id="modal-kod" placeholder="Wpisz ręcznie kod kreskowy">
+
+            <label>Nazwa produktu:</label>
+            <input type="text" id="modal-nazwa" placeholder="Np. Batonik, Cola">
+
+            <label>Cena w zł:</label>
+            <input type="number" step="0.01" id="modal-cena" placeholder="Np. 4.50">
+            
+            <button class="btn-save" onclick="zapiszProduktZModala()">Zapisz produkt w bazie</button>
+            <button class="btn-close" onclick="toggleModal(false)">Zamknij panel</button>
+        </div>
+    </div>
+
     <script>
-        const productDatabase = { "mleko": { name: "Mleko 3.2%", price: 4.50 }, "chleb": { name: "Chleb", price: 5.20 } };
-        let cart = []; let total = 0; let conn = null;
+        let cart = [];
+        let total = 0;
+        let conn = null;
+
+        // Inicjalizacja PeerJS (parowanie)
         const kasaId = 'kasa-' + Math.random().toString(36).substring(2, 9);
         const peer = new Peer(kasaId);
-        peer.on('open', (id) => { document.getElementById('pairing-qr').src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${id}`; });
-        peer.on('connection', (connection) => { conn = connection; setupConnection(); });
+
+        peer.on('open', (id) => {
+            document.getElementById('pairing-qr').src = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${id}`;
+        });
+
+        peer.on('connection', (connection) => {
+            conn = connection;
+            setupConnection();
+        });
+
         function setupConnection() {
             document.getElementById('conn-status').innerText = "POŁĄCZONO Z TERMINALEM";
             document.getElementById('conn-status').className = "status-badge connected";
             document.getElementById('pairing-section').style.display = "none";
             document.getElementById('pay-btn').removeAttribute('disabled');
-            conn.on('data', (data) => { if (data === "PAYMENT_SUCCESS") { alert("Płatność zatwierdzona!"); clearCart(); } });
+            document.getElementById('pay-btn').innerText = "Zapłać kartą (Wyślij sygnał)";
+
+            conn.on('data', (data) => {
+                if (data === "PAYMENT_SUCCESS") {
+                    alert("KASA: Płatność zatwierdzona przez terminal!");
+                    clearCart();
+                }
+            });
         }
-        function addTemplate() {
-            const name = document.getElementById('p-name').value; const price = parseFloat(document.getElementById('p-price').value);
-            if(name && price) { const code = name.toLowerCase().replace(/\s+/g, ''); productDatabase[code] = { name, price }; alert("Dodano!"); }
-        }
+
         function updateCartDisplay() {
-            const container = document.getElementById('cart-items'); container.innerHTML = ''; total = 0;
-            cart.forEach(item => { total += item.price; container.innerHTML += `<div class="item"><span>${item.name}</span><span>${item.price.toFixed(2)} zł</span></div>`; });
+            const container = document.getElementById('cart-items');
+            container.innerHTML = '';
+            total = 0;
+            cart.forEach(item => {
+                total += item.price;
+                container.innerHTML += `<div class="item"><span>${item.name}</span><span>${item.price.toFixed(2)} zł</span></div>`;
+            });
             document.getElementById('total').innerText = `Suma: ${total.toFixed(2)} zł`;
         }
-        function clearCart() { cart = []; updateCartDisplay(); }
-        let lastScannedCode = ""; let lastScanTime = 0;
+
+        function clearCart() {
+            cart = [];
+            updateCartDisplay();
+        }
+
+        // Zarządzanie panelem (Modalem)
+        function toggleModal(show) {
+            document.getElementById('product-modal').style.display = show ? 'flex' : 'none';
+        }
+
+        function zapiszProduktZModala() {
+            const kod = document.getElementById('modal-kod').value.trim().toLowerCase();
+            const nazwa = document.getElementById('modal-nazwa').value.trim();
+            const cena = parseFloat(document.getElementById('modal-cena').value);
+
+            if (!kod || !nazwa || isNaN(cena)) {
+                alert("Wypełnij poprawnie wszystkie pola!");
+                return;
+            }
+
+            let database = JSON.parse(localStorage.getItem('baza_produktow')) || {};
+            database[kod] = { name: nazwa, price: cena };
+            localStorage.setItem('baza_produktow', JSON.stringify(database));
+
+            alert(`Dodano: ${nazwa} (${cena.toFixed(2)} zł)`);
+            
+            // Czyszczenie i ukrywanie panelu
+            document.getElementById('modal-kod').value = '';
+            document.getElementById('modal-nazwa').value = '';
+            document.getElementById('modal-cena').value = '';
+            toggleModal(false);
+        }
+
+        // Skaner
+        let lastScannedCode = "";
+        let lastScanTime = 0;
+
         function onScanSuccess(decodedText) {
-            const now = Date.now(); const cleanCode = decodedText.trim().toLowerCase();
+            const now = Date.now();
+            const cleanCode = decodedText.trim().toLowerCase();
+            
             if (cleanCode === lastScannedCode && (now - lastScanTime) < 2500) return;
-            if (productDatabase[cleanCode]) {
-                lastScannedCode = cleanCode; lastScanTime = now; cart.push(productDatabase[cleanCode]); updateCartDisplay();
+            
+            lastScannedCode = cleanCode;
+            lastScanTime = now;
+
+            let database = JSON.parse(localStorage.getItem('baza_produktow')) || {};
+
+            if (database[cleanCode]) {
+                cart.push(database[cleanCode]);
+                updateCartDisplay();
+                new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-84.wav').play();
+            } else {
+                console.log("Nieznany kod kreskowy: " + cleanCode);
             }
         }
-        new Html5QrcodeScanner("reader", { fps: 15, qrbox: 250 }).render(onScanSuccess);
+
+        const html5QrcodeScanner = new Html5QrcodeScanner("reader", { 
+            fps: 20, 
+            qrbox: { width: 300, height: 150 },
+            formatsToSupport: [ 
+                Html5QrcodeSupportedFormats.QR_CODE,
+                Html5QrcodeSupportedFormats.EAN_13,
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.CODE_128
+            ]
+        });
+        html5QrcodeScanner.render(onScanSuccess);
+
         function sendPaymentToTerminal() {
-            if(total === 0) return alert("Pusty koszyk!");
-            if (conn && conn.open) conn.send({ action: "START_PAYMENT", amount: total.toFixed(2) });
+            if(total === 0) return alert("Koszyk jest pusty!");
+            if (conn && conn.open) {
+                conn.send({ action: "START_PAYMENT", amount: total.toFixed(2) });
+            } else {
+                alert("Błąd połączenia z terminalem.");
+            }
         }
     </script>
 </body>
