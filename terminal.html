@@ -17,19 +17,20 @@
         .payment-screen { display: none; background: #1e3a8a; padding: 30px; border-radius: 16px; border: 2px solid #3b82f6; }
         .amount { font-size: 42px; font-weight: bold; color: #60a5fa; margin: 20px 0; }
         .btn-nfc { background: #10b981; color: white; border: none; padding: 15px 20px; font-size: 18px; font-weight: bold; border-radius: 8px; width: 100%; cursor: pointer; display: none; }
-        #error-log { color: #f87171; font-size: 12px; margin-top: 10px; text-align: left; background: #000; padding: 10px; border-radius: 6px; display: none; }
+        #debug-log { color: #f1c40f; font-size: 14px; margin-top: 15px; text-align: center; background: #000; padding: 10px; border-radius: 6px; font-family: monospace; }
     </style>
 </head>
 <body>
 
     <div class="container">
         <h2>Terminal Mobilny</h2>
-        <div id="status-box" class="status waiting">🔴 Czekam na zeskanowanie kodu z kasy...</div>
+        <div id="status-box" class="status waiting">🔴 Nakieruj aparat na kod QR w Kasie...</div>
 
         <!-- SEKCJA SKANOWANIA KODU PAROWANIA -->
         <div id="scanner-container">
             <div id="reader"></div>
-            <div id="error-log"></div>
+            <!-- PODGLĄD DEBUGA - ZOBACZYSZ CO SKANUJE -->
+            <div id="debug-log">Oczekiwanie na kod QR...</div>
         </div>
 
         <!-- EKRAN PŁATNOŚCI NFC -->
@@ -47,57 +48,73 @@
         let html5Qrcode = null;
         let currentAmount = "0.00";
 
-        // Start kamery od razu po załadowaniu strony
         window.addEventListener('DOMContentLoaded', () => {
             initCamera();
         });
 
         function initCamera() {
-            // Bezpośrednia próba wymuszenia kamery za pomocą natywnego API html5Qrcode
             html5Qrcode = new Html5Qrcode("reader");
             
-            const config = { fps: 15, qrbox: 250 };
+            // MAKSYMALNE USTAWIENIA DLA SZYBKIEGO UNIKANIA BŁĘDÓW
+            const config = { 
+                fps: 25, // Więcej klatek na sekundę = szybsze łapanie ostrości
+                qrbox: { width: 250, height: 250 }
+            };
             
-            // Wymuszenie tylnej kamery (environment)
-            html5Qrcode.start({ facingMode: "environment" }, config, onScanSuccess)
-            .catch(err => {
-                // Jeśli urządzenie ma nietypowe kamery, próbujemy odpalić domyślną pierwszą lepszą
-                console.error("Błąd environment, próba ogólna...", err);
-                html5Qrcode.start({ facingMode: "user" }, config, onScanSuccess)
-                .catch(err2 => {
-                    const log = document.getElementById('error-log');
-                    log.style.display = "block";
-                    log.innerText = "Błąd kamery: " + err2 + "\nUpewnij się, że dałeś uprawnienia w systemie!";
-                });
+            html5Qrcode.start(
+                { facingMode: "environment" }, 
+                config, 
+                onScanSuccess,
+                (errorMessage) => {
+                    // Ignorujemy miliony błędów "no code found" w logach, żeby nie zapychać pamięci
+                }
+            ).catch(err => {
+                document.getElementById('debug-log').innerText = "Błąd startu aparatu: " + err;
             });
         }
 
         function onScanSuccess(decodedText) {
-            // Kod parowania to ID kasy
-            if (decodedText.startsWith("kasa-")) {
+            const cleanText = decodedText.trim();
+            
+            // ŻÓŁTY LOG - Pokazuje DOKŁADNIE co telefon przeczytał
+            document.getElementById('debug-log').innerText = "Wykryto tekst: " + cleanText;
+
+            // Łączymy jeśli tekst zawiera id kasy
+            if (cleanText.includes("kasa-")) {
+                document.getElementById('debug-log').innerText = "Znaleziono ID Kasy! Łączenie...";
+                
                 if(html5Qrcode) {
                     html5Qrcode.stop().then(() => {
                         document.getElementById('scanner-container').style.display = "none";
-                        connectToKasa(decodedText);
+                        connectToKasa(cleanText);
+                    }).catch(() => {
+                        document.getElementById('scanner-container').style.display = "none";
+                        connectToKasa(cleanText);
                     });
-                } else {
-                    document.getElementById('scanner-container').style.display = "none";
-                    connectToKasa(decodedText);
                 }
             }
         }
 
         function connectToKasa(kasaId) {
-            document.getElementById('status-box').innerText = "🔄 Łączenie z kasą...";
+            document.getElementById('status-box').innerText = "🔄 Uruchamianie sieci P2P...";
             
             peer = new Peer();
             
             peer.on('open', () => {
-                conn = peer.connect(kasaId);
+                document.getElementById('status-box').innerText = "🔄 Próba spięcia z: " + kasaId;
+                
+                // Wycinamy zbędne elementy jeśli link był pełny
+                let targetId = kasaId;
+                if(kasaId.includes("data=")) {
+                    targetId = kasaId.split("data=")[1];
+                }
+
+                conn = peer.connect(targetId);
                 
                 conn.on('open', () => {
                     document.getElementById('status-box').innerText = "🟢 SPAROWANO Z KASĄ";
                     document.getElementById('status-box').className = "status connected";
+                    document.getElementById('debug-log').style.display = "none";
                 });
 
                 conn.on('data', (data) => {
@@ -108,9 +125,14 @@
                 });
                 
                 conn.on('close', () => {
-                    alert("Połączenie z kasą zostało przerwane.");
+                    alert("Połączenie przerwane.");
                     window.location.reload();
                 });
+            });
+
+            peer.on('error', (err) => {
+                document.getElementById('status-box').innerText = "🔴 Błąd sieci: " + err.type;
+                console.error(err);
             });
         }
 
@@ -118,14 +140,12 @@
             document.getElementById('payment-amount').innerText = amount + " zł";
             document.getElementById('payment-box').style.display = "block";
             
-            // Sprawdzenie czy telefon obsługuje NFC
             if ('NDEFReader' in window) {
                 document.getElementById('nfc-trigger').style.display = "block";
-                startNFCScan(); // Autostart NFC
+                startNFCScan();
             } else {
-                // Symulacja dla telefonów bez WebNFC w przeglądarce (kliknięcie ekranu zatwierdza)
-                alert("Przeglądarka nie obsługuje WebNFC. Kliknij ekran, aby symulować przyłożenie karty.");
-                document.getElementById('payment-box').onclick = simulatePayment;
+                alert("Brak WebNFC. Kliknij niebieski ekran, aby symulować kartę.");
+                document.getElementById('payment-box').onclick = completePayment;
             }
         }
 
@@ -133,26 +153,21 @@
             try {
                 const ndef = new NDEFReader();
                 await ndef.scan();
-                document.getElementById('nfc-trigger').innerText = "Czytnik aktywny... Zbliż kartę";
+                document.getElementById('nfc-trigger').innerText = "Czytnik gotowy. Zbliż kartę.";
                 
                 ndef.onreading = event => {
-                    // Sukces NFC!
                     new Audio('https://assets.mixkit.co/active_storage/sfx/911/911-84.wav').play();
                     completePayment();
                 };
             } catch (error) {
-                alert("Błąd uruchomienia NFC: " + error);
+                alert("NFC Error: " + error);
             }
-        }
-
-        function simulatePayment() {
-            completePayment();
         }
 
         function completePayment() {
             if (conn && conn.open) {
                 conn.send("PAYMENT_SUCCESS");
-                alert("Płatność udana! Wysłano potwierdzenie do kasy.");
+                alert("Zapłacono!");
                 document.getElementById('payment-box').style.display = "none";
                 document.getElementById('payment-box').onclick = null;
             }
