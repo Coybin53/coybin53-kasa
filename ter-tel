@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal POS</title>
+    <style>
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background: #1e272e;
+            color: #fff;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            user-select: none;
+        }
+
+        /* Obudowa terminala */
+        .terminal-case {
+            background: #2f3640;
+            border: 8px solid #1e222b;
+            border-radius: 25px;
+            width: 100%;
+            max-width: 360px;
+            padding: 20px;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.5);
+            box-sizing: border-box;
+        }
+
+        /* Ekran fizyczny */
+        .screen {
+            background: #00d2d3;
+            color: #222f3e;
+            border: 6px solid #1e222b;
+            border-radius: 10px;
+            height: 160px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.4);
+            font-weight: bold;
+            box-sizing: border-box;
+            text-shadow: 0 1px 0 rgba(255,255,255,0.5);
+        }
+
+        .screen-top { font-size: 14px; letter-spacing: 1px; }
+        .screen-amount { font-size: 38px; text-align: right; font-family: monospace; font-weight: 900; }
+        .screen-status { font-size: 15px; text-align: center; animation: blink 1s infinite; }
+
+        @keyframes blink { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
+        /* Klawiatura numeryczna */
+        .keyboard {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 25px;
+        }
+
+        .key {
+            background: #3d4250;
+            border: none;
+            border-bottom: 4px solid #282c35;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            padding: 15px 0;
+            border-radius: 8px;
+            cursor: pointer;
+            active-transform: translateY(2px);
+        }
+        .key:active {
+            background: #4b5263;
+            border-bottom: 2px solid #282c35;
+            transform: translateY(2px);
+        }
+
+        /* Specjalne klawisze funkcyjne */
+        .key.clear { background: #ee5253; border-bottom-color: #c8d6e5; color: #fff; font-size: 18px; }
+        .key.back { background: #feca57; border-bottom-color: #ff9f43; color: #222f3e; font-size: 18px; }
+        .key.enter { background: #10ac84; border-bottom-color: #1dd1a1; color: #fff; font-size: 18px; }
+    </style>
+</head>
+<body>
+
+    <div class="terminal-case">
+        <!-- Ekran terminala -->
+        <div class="screen" id="screen">
+            <div class="screen-top" id="scr-title">WPROWADŹ KWOTĘ</div>
+            <div class="screen-amount" id="scr-amount">0,00 PLN</div>
+            <div class="screen-status" id="scr-status">PODAJ WARTOŚĆ</div>
+        </div>
+
+        <!-- Klawiatura fizyczna -->
+        <div class="keyboard">
+            <button class="key" onclick="pressNum('1')">1</button>
+            <button class="key" onclick="pressNum('2')">2</button>
+            <button class="key" onclick="pressNum('3')">3</button>
+            
+            <button class="key" onclick="pressNum('4')">4</button>
+            <button class="key" onclick="pressNum('5')">5</button>
+            <button class="key" onclick="pressNum('6')">6</button>
+            
+            <button class="key" onclick="pressNum('7')">7</button>
+            <button class="key" onclick="pressNum('8')">8</button>
+            <button class="key" onclick="pressNum('9')">9</button>
+            
+            <button class="key clear" onclick="pressClear()">ZRESETUJ</button>
+            <button class="key" onclick="pressNum('0')">0</button>
+            <button class="key enter" onclick="pressEnter()">ZATWIERDŹ</button>
+        </div>
+    </div>
+
+    <script>
+        let rawAmount = "0";
+        let isWaitingForCard = false;
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function updateDisplay() {
+            let numericValue = parseFloat(rawAmount) / 100;
+            document.getElementById('scr-amount').innerText = numericValue.toFixed(2).replace('.', ',') + " PLN";
+        }
+
+        function pressNum(num) {
+            if (isWaitingForCard) return; // Zablokuj klawiaturę podczas płatności
+            if (rawAmount === "0" && num !== "0") {
+                rawAmount = num;
+            } else if (rawAmount !== "0") {
+                if (rawAmount.length < 8) rawAmount += num; // Limit kwoty
+            }
+            updateDisplay();
+        }
+
+        function pressClear() {
+            rawAmount = "0";
+            isWaitingForCard = false;
+            document.getElementById('screen').style.background = "#00d2d3";
+            document.getElementById('scr-title').innerText = "WPROWADŹ KWOTĘ";
+            document.getElementById('scr-status').innerText = "PODAJ WARTOŚĆ";
+            updateDisplay();
+        }
+
+        // Dźwięk TU-TU przy zatwierdzaniu
+        function playTuTu() {
+            const osc1 = audioCtx.createOscillator();
+            const osc2 = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            osc1.connect(gain);
+            osc2.connect(gain);
+            gain.connect(audioCtx.destination);
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+
+            osc1.frequency.setValueAtTime(600, audioCtx.currentTime);
+            osc1.start();
+            setTimeout(() => { osc1.stop(); }, 150);
+
+            setTimeout(() => {
+                osc2.frequency.setValueAtTime(600, audioCtx.currentTime);
+                osc2.start();
+                setTimeout(() => { osc2.stop(); }, 150);
+            }, 250);
+        }
+
+        // Prawdziwe długie PIII terminala przy karcie
+        function playPiii() {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.frequency.setValueAtTime(1450, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+            
+            osc.start();
+            setTimeout(() => { osc.stop(); }, 1100);
+        }
+
+        function pressEnter() {
+            if (parseFloat(rawAmount) === 0 || isWaitingForCard) return;
+            
+            isWaitingForCard = true;
+            playTuTu(); // Dźwięk przejścia do płatności
+
+            document.getElementById('scr-title').innerText = "ZBLIŻ KARTĘ/TELEFON";
+            document.getElementById('scr-status').innerText = "📶 💳 📶";
+            
+            // Odpal nasłuchiwanie NFC
+            startNFC();
+        }
+
+        function triggerPaymentSuccess() {
+            isWaitingForCard = false;
+            playPiii(); // Dźwięk akceptacji karty
+
+            document.getElementById('screen').style.background = "#1dd1a1"; // Zielony ekran sukcesu
+            document.getElementById('scr-title').innerText = "TRANSAKCJA OK";
+            document.getElementById('scr-status').innerText = "DZIĘKUJEMY";
+
+            // Automatyczny powrót po 3.5 sekundach do nowej kwoty
+            setTimeout(() => {
+                pressClear();
+            }, 3500);
+        }
+
+        // Nasłuchiwanie NFC (reaguje na błędy i na poprawne odczyty - czyli na WSZYSTKO)
+        async function startNFC() {
+            if ('NDEFReader' in window) {
+                try {
+                    const ndef = new NDEFReader();
+                    await ndef.scan();
+                    
+                    ndef.addEventListener("reading", () => {
+                        if (isWaitingForCard) triggerPaymentSuccess();
+                    });
+
+                    ndef.addEventListener("readingerror", () => {
+                        if (isWaitingForCard) triggerPaymentSuccess();
+                    });
+
+                } catch (error) {
+                    console.log("NFC Error: " + error + " (Wymagany protokół HTTPS)");
+                }
+            }
+        }
+    </script>
+</body>
+</html>
