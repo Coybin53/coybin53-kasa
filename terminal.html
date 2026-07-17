@@ -1,0 +1,65 @@
+
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal Płatniczy POS</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: 'Arial', sans-serif; background: #1a252f; color: white; margin: 0; padding: 20px; text-align: center; }
+        .screen { background: #2c3e50; border: 6px solid #111; border-radius: 20px; padding: 30px 20px; min-height: 350px; display: flex; flex-direction: column; justify-content: center; align-items: center; box-shadow: inset 0 0 30px rgba(0,0,0,0.7); }
+        .amount { font-size: 45px; font-weight: bold; color: #2ecc71; margin: 25px 0; }
+        #reader { width: 100%; max-width: 300px; border-radius: 12px; }
+        .icon { font-size: 70px; margin: 15px; }
+    </style>
+</head>
+<body>
+    <div id="status-top">Stan: Uruchamianie...</div>
+    <div class="screen">
+        <div id="state-pairing"><h3>Zeskanuj kod z Kasy</h3><div id="reader"></div></div>
+        <div id="state-idle" style="display: none;"><div class="icon">🏪</div><h2>CZEKAM NA PŁATNOŚĆ</h2></div>
+        <div id="state-payment" style="display: none;"><div class="amount" id="sum-field">0.00 zł</div><div class="icon">💳📶</div><p>ZBLIŻ KARTĘ / TAG</p></div>
+        <div id="state-success" style="display: none;"><div class="icon" style="color: #2ecc71;">✅</div><h2>ZAAKCEPTOWANO</h2></div>
+    </div>
+    <script>
+        const peer = new Peer(); let conn = null;
+        peer.on('open', () => { document.getElementById('status-top').innerText = "Gotowy do parowania"; });
+        function onPairingScan(kasaId) {
+            scanner.clear(); conn = peer.connect(kasaId);
+            conn.on('open', () => { 
+                document.getElementById('state-pairing').style.display = 'none'; 
+                document.getElementById('state-idle').style.display = 'block'; 
+                startNFC(); 
+            });
+            conn.on('data', (data) => {
+                if (data.action === "START_PAYMENT") {
+                    document.getElementById('sum-field').innerText = `${data.amount} zł`;
+                    document.getElementById('state-idle').style.display = 'none';
+                    document.getElementById('state-payment').style.display = 'block';
+                }
+            });
+        }
+        const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 200 });
+        scanner.render(onPairingScan);
+        function beep() {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator(); osc.connect(ctx.destination);
+            osc.frequency.value = 1450; osc.start(); setTimeout(() => osc.stop(), 1000);
+            document.getElementById('state-payment').style.display = 'none';
+            document.getElementById('state-success').style.display = 'block';
+            if (conn) conn.send("PAYMENT_SUCCESS");
+            setTimeout(() => { location.reload(); }, 3000);
+        }
+        async function startNFC() {
+            if ('NDEFReader' in window) {
+                const ndef = new NDEFReader();
+                await ndef.scan();
+                ndef.addEventListener("reading", () => { if(document.getElementById('state-payment').style.display === 'block') beep(); });
+                ndef.addEventListener("readingerror", () => { if(document.getElementById('state-payment').style.display === 'block') beep(); });
+            }
+        }
+    </script>
+</body>
+</html>
