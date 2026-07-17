@@ -4,172 +4,124 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Terminal Mobilny</title>
-    <script src="https://unpkg.com/html5-qrcode"></script>
+    <!-- SKRYPT DO POŁĄCZENIA SIECIOWEGO P2P -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; background: #111827; color: white; margin: 0; padding: 20px; text-align: center; }
         .container { max-width: 400px; margin: 0 auto; }
-        #scanner-container { background: #1f2937; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); margin-bottom: 20px; }
-        #reader { width: 100%; background: #000; border-radius: 8px; overflow: hidden; }
-        .status { padding: 12px; border-radius: 8px; font-weight: bold; margin-bottom: 20px; font-size: 15px; }
-        .waiting { background: #374151; color: #9ca3af; }
+        .box { background: #1f2937; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); margin-top: 20px; }
+        input { width: 100%; padding: 15px; box-sizing: border-box; border: none; border-radius: 8px; font-size: 24px; text-align: center; font-weight: bold; margin-bottom: 15px; background: #374151; color: white; letter-spacing: 2px; }
+        button { background: #3b82f6; color: white; border: none; padding: 15px; font-size: 16px; font-weight: bold; border-radius: 8px; width: 100%; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #2563eb; }
+        .status { padding: 12px; border-radius: 8px; font-weight: bold; margin-bottom: 20px; background: #374151; color: #9ca3af; font-size: 15px; }
         .connected { background: #059669; color: white; }
-        .payment-screen { display: none; background: #1e3a8a; padding: 30px; border-radius: 16px; border: 2px solid #3b82f6; }
+        .payment-screen { display: none; background: #1e3a8a; padding: 30px; border-radius: 16px; margin-top: 20px; border: 2px solid #3b82f6; cursor: pointer; }
         .amount { font-size: 42px; font-weight: bold; color: #60a5fa; margin: 20px 0; }
-        .btn-nfc { background: #10b981; color: white; border: none; padding: 15px 20px; font-size: 18px; font-weight: bold; border-radius: 8px; width: 100%; cursor: pointer; display: none; }
-        #debug-log { color: #f1c40f; font-size: 14px; margin-top: 15px; text-align: center; background: #000; padding: 10px; border-radius: 6px; font-family: monospace; }
+        .btn-nfc { background: #10b981; color: white; border: none; padding: 15px 20px; font-size: 18px; font-weight: bold; border-radius: 8px; width: 100%; cursor: pointer; display: none; margin-top: 15px; }
     </style>
 </head>
 <body>
 
     <div class="container">
         <h2>Terminal Mobilny</h2>
-        <div id="status-box" class="status waiting">🔴 Nakieruj aparat na kod QR w Kasie...</div>
+        <!-- STATUS POŁĄCZENIA -->
+        <div id="status-box" class="status">🔴 Oczekiwanie na wpisanie PINu...</div>
 
-        <!-- SEKCJA SKANOWANIA KODU PAROWANIA -->
-        <div id="scanner-container">
-            <div id="reader"></div>
-            <!-- PODGLĄD DEBUGA - ZOBACZYSZ CO SKANUJE -->
-            <div id="debug-log">Oczekiwanie na kod QR...</div>
+        <!-- PANEL PAROWANIA -->
+        <div id="setup-box" class="box">
+            <p style="color: #9ca3af; margin-top: 0;">Wpisz 4-cyfrowy PIN wygenerowany przez Kasę:</p>
+            <input type="number" id="pin-input" placeholder="Np. 1234" pattern="\d*">
+            <button onclick="connectByPin()">Połącz z kasą</button>
         </div>
 
-        <!-- EKRAN PŁATNOŚCI NFC -->
+        <!-- EKRAN PRZYJMOWANIA PŁATNOŚCI -->
         <div id="payment-box" class="payment-screen">
             <h3>DO ZAPŁATY</h3>
             <div id="payment-amount" class="amount">0.00 zł</div>
-            <p>Zbliż kartę do pleców telefonu...</p>
-            <button id="nfc-trigger" class="btn-nfc" onclick="startNFCScan()">Aktywuj czytnik NFC</button>
+            <p style="margin: 5px 0;">Zbliż kartę płatniczą do telefonu...</p>
+            <p style="font-size: 12px; color: #93c5fd;">(Lub kliknij ten niebieski ekran, aby symulować płatność)</p>
+            
+            <!-- PRZYCISK DLA WEBNFC (POKAŻE SIĘ TYLKO NA OBSŁUGIWANYCH TELEFONACH Z ANDROIDEM) -->
+            <button id="nfc-trigger" class="btn-nfc" onclick="event.stopPropagation(); startNFCScan();">Aktywuj czytnik NFC</button>
         </div>
     </div>
 
     <script>
         let conn = null;
-        let peer = null;
-        let html5Qrcode = null;
-        let currentAmount = "0.00";
+        let peer = new Peer(); // Inicjalizacja sieci P2P na telefonie
 
-        window.addEventListener('DOMContentLoaded', () => {
-            initCamera();
-        });
-
-        function initCamera() {
-            html5Qrcode = new Html5Qrcode("reader");
-            
-            // MAKSYMALNE USTAWIENIA DLA SZYBKIEGO UNIKANIA BŁĘDÓW
-            const config = { 
-                fps: 25, // Więcej klatek na sekundę = szybsze łapanie ostrości
-                qrbox: { width: 250, height: 250 }
-            };
-            
-            html5Qrcode.start(
-                { facingMode: "environment" }, 
-                config, 
-                onScanSuccess,
-                (errorMessage) => {
-                    // Ignorujemy miliony błędów "no code found" w logach, żeby nie zapychać pamięci
-                }
-            ).catch(err => {
-                document.getElementById('debug-log').innerText = "Błąd startu aparatu: " + err;
-            });
-        }
-
-        function onScanSuccess(decodedText) {
-            const cleanText = decodedText.trim();
-            
-            // ŻÓŁTY LOG - Pokazuje DOKŁADNIE co telefon przeczytał
-            document.getElementById('debug-log').innerText = "Wykryto tekst: " + cleanText;
-
-            // Łączymy jeśli tekst zawiera id kasy
-            if (cleanText.includes("kasa-")) {
-                document.getElementById('debug-log').innerText = "Znaleziono ID Kasy! Łączenie...";
-                
-                if(html5Qrcode) {
-                    html5Qrcode.stop().then(() => {
-                        document.getElementById('scanner-container').style.display = "none";
-                        connectToKasa(cleanText);
-                    }).catch(() => {
-                        document.getElementById('scanner-container').style.display = "none";
-                        connectToKasa(cleanText);
-                    });
-                }
+        // FUNKCJA ŁĄCZENIA PRZEZ PIN
+        function connectByPin() {
+            const pin = document.getElementById('pin-input').value.trim();
+            if(!pin || pin.length < 4) {
+                alert("Wpisz poprawny 4-cyfrowy PIN z ekranu kasy!");
+                return;
             }
-        }
 
-        function connectToKasa(kasaId) {
-            document.getElementById('status-box').innerText = "🔄 Uruchamianie sieci P2P...";
+            document.getElementById('status-box').innerText = "🔄 Łączenie z kasą o PINie: " + pin + "...";
             
-            peer = new Peer();
+            // Próba spięcia z unikalnym identyfikatorem kasy
+            conn = peer.connect('coybin-kasa-' + pin);
             
-            peer.on('open', () => {
-                document.getElementById('status-box').innerText = "🔄 Próba spięcia z: " + kasaId;
-                
-                // Wycinamy zbędne elementy jeśli link był pełny
-                let targetId = kasaId;
-                if(kasaId.includes("data=")) {
-                    targetId = kasaId.split("data=")[1];
-                }
+            // Sukces parowania
+            conn.on('open', () => {
+                document.getElementById('status-box').innerText = "🟢 SPAROWANO Z KASĄ";
+                document.getElementById('status-box').className = "status connected";
+                document.getElementById('setup-box').style.display = "none";
+            });
 
-                conn = peer.connect(targetId);
-                
-                conn.on('open', () => {
-                    document.getElementById('status-box').innerText = "🟢 SPAROWANO Z KASĄ";
-                    document.getElementById('status-box').className = "status connected";
-                    document.getElementById('debug-log').style.display = "none";
-                });
-
-                conn.on('data', (data) => {
-                    if (data && data.action === "START_PAYMENT") {
-                        currentAmount = data.amount;
-                        showPaymentScreen(data.amount);
+            // Odbieranie sygnału o płatności z kasy
+            conn.on('data', (data) => {
+                if (data && data.action === "START_PAYMENT") {
+                    document.getElementById('payment-amount').innerText = data.amount + " zł";
+                    document.getElementById('payment-box').style.display = "block";
+                    
+                    // Sprawdzamy czy telefon wspiera WebNFC
+                    if ('NDEFReader' in window) {
+                        document.getElementById('nfc-trigger').style.display = "block";
+                        startNFCScan();
                     }
-                });
-                
-                conn.on('close', () => {
-                    alert("Połączenie przerwane.");
-                    window.location.reload();
-                });
+                }
             });
 
-            peer.on('error', (err) => {
-                document.getElementById('status-box').innerText = "🔴 Błąd sieci: " + err.type;
-                console.error(err);
+            // Rozłączenie
+            conn.on('close', () => {
+                alert("Połączenie z kasą zostało przerwane.");
+                window.location.reload();
             });
         }
 
-        function showPaymentScreen(amount) {
-            document.getElementById('payment-amount').innerText = amount + " zł";
-            document.getElementById('payment-box').style.display = "block";
-            
-            if ('NDEFReader' in window) {
-                document.getElementById('nfc-trigger').style.display = "block";
-                startNFCScan();
-            } else {
-                alert("Brak WebNFC. Kliknij niebieski ekran, aby symulować kartę.");
-                document.getElementById('payment-box').onclick = completePayment;
-            }
-        }
-
+        // AKTYWACJA FIZYCZNEGO NFC W TELEFONIE
         async function startNFCScan() {
             try {
                 const ndef = new NDEFReader();
                 await ndef.scan();
                 document.getElementById('nfc-trigger').innerText = "Czytnik gotowy. Zbliż kartę.";
+                document.getElementById('nfc-trigger').style.background = "#059669";
                 
                 ndef.onreading = event => {
+                    // Dźwięk udanej płatności
                     new Audio('https://assets.mixkit.co/active_storage/sfx/911/911-84.wav').play();
                     completePayment();
                 };
             } catch (error) {
-                alert("NFC Error: " + error);
+                console.log("NFC niedostępne lub zablokowane uprawnienia: " + error);
             }
         }
 
+        // SYMULACJA LUB ZAKOŃCZENIE PŁATNOŚCI
+        document.getElementById('payment-box').onclick = function() {
+            completePayment();
+        };
+
         function completePayment() {
             if (conn && conn.open) {
+                // Wysyłamy zwrotny sygnał sukcesu do kasy na laptopie
                 conn.send("PAYMENT_SUCCESS");
-                alert("Zapłacono!");
+                alert("Płatność zaakceptowana! Kasa otrzymała potwierdzenie.");
                 document.getElementById('payment-box').style.display = "none";
-                document.getElementById('payment-box').onclick = null;
+            } else {
+                alert("Błąd: Połączenie z kasą jest nieaktywne.");
             }
         }
     </script>
